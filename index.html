@@ -55,12 +55,10 @@
 
             useEffect(() => {
                 if (window.lucide && ref.current) {
-                    // Lucide 圖示鍵值通常為小寫開頭
                     const iconKey = name.charAt(0).toLowerCase() + name.slice(1);
                     const iconData = window.lucide.icons[iconKey] || window.lucide.icons[name];
                     
                     if (iconData) {
-                        // 建立一個新的 SVG 元素
                         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
                         svg.setAttribute("width", size);
                         svg.setAttribute("height", size);
@@ -76,7 +74,6 @@
                             });
                         }
 
-                        // Lucide 圖示結構為 [ [tagName, attributes], ... ]
                         iconData.forEach(([tag, attrs]) => {
                             const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
                             Object.entries(attrs).forEach(([key, value]) => {
@@ -85,7 +82,6 @@
                             svg.appendChild(element);
                         });
 
-                        // 清空並插入新的 SVG
                         ref.current.innerHTML = '';
                         ref.current.appendChild(svg);
                     }
@@ -96,8 +92,11 @@
         };
 
         const App = () => {
-            // --- Google Sheet CSV 連結 ---
-            const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT30owrni1cunvHWpCIaI4E9mHjZhaGAi4goh1mo13vx0E5dgV7uPWDDYCwRBASNmItf2W25-sPMMYX/pub?output=csv"; 
+            // --- Google Sheet CSV 連結 (用於抓取資料) ---
+            const SHEET_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT30owrni1cunvHWpCIaI4E9mHjZhaGAi4goh1mo13vx0E5dgV7uPWDDYCwRBASNmItf2W25-sPMMYX/pub?output=csv"; 
+            
+            // --- Google Sheet 編輯連結 (用於導覽) ---
+            const SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1jbM81kyHfpiCo8FC7IT-69N0lBvok_iYLdKNbJRd3OI/edit?usp=sharing";
 
             const [songs, setSongs] = useState([]);
             const [loading, setLoading] = useState(true);
@@ -154,7 +153,7 @@
                 const fetchData = async () => {
                     try {
                         setLoading(true);
-                        const response = await fetch(SHEET_URL);
+                        const response = await fetch(SHEET_DATA_URL);
                         const csvText = await response.text();
                         
                         const allRows = parseCSV(csvText);
@@ -230,30 +229,41 @@
             return (
                 <div className="min-h-screen text-[#7C6BA1] p-4 md:p-12">
                     {/* Header Area */}
-                    <header className="max-w-7xl mx-auto mb-12 flex flex-col items-center">
-                        <div className="w-24 h-24 mb-6 rounded-[2.5rem] border-2 border-dashed border-[#E0D9F0] flex items-center justify-center bg-white group hover:border-[#B7AAD6] transition-all cursor-pointer overflow-hidden shadow-sm">
-                            <div className="flex flex-col items-center">
-                                <Icon name="Image" size={32} className="text-[#C8BFE0] group-hover:text-[#9B8BBF] mb-1 transition-colors" />
-                                <span className="text-[10px] text-[#C8BFE0] font-medium tracking-widest uppercase">Logo</span>
-                            </div>
-                        </div>
-
-                        <h1 className="text-2xl font-light tracking-[0.3em] text-[#6B5B95] mb-2 text-center uppercase">
+                    <header className="max-w-7xl mx-auto mb-16 flex flex-col items-center">
+                        <h1 className="text-3xl font-light tracking-[0.4em] text-[#6B5B95] mb-6 text-center uppercase">
                             伊諾 Ino Song List
                         </h1>
                         
-                        <div className="flex items-center space-x-3 text-[#A99ACD]">
-                            <div className="h-px w-8 bg-[#ECE7F5]"></div>
-                            <a 
-                                href="https://www.youtube.com/@Inochannel" 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="flex items-center space-x-1.5 text-[10px] tracking-[0.2em] font-medium uppercase text-[#9B8BBF] hover:text-[#6B5B95] transition-colors group"
-                            >
-                                <span>伊諾 Ino - YouTube</span>
-                                <Icon name="ExternalLink" size={10} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-                            </a>
-                            <div className="h-px w-8 bg-[#ECE7F5]"></div>
+                        <div className="flex flex-wrap justify-center items-center gap-x-8 gap-y-3 text-[#A99ACD]">
+                            {/* YouTube 頻道連結 */}
+                            <div className="flex items-center space-x-3">
+                                <div className="h-px w-6 bg-[#ECE7F5]"></div>
+                                <a 
+                                    href="https://www.youtube.com/@Inochannel" 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="flex items-center space-x-1.5 text-[11px] tracking-[0.2em] font-medium uppercase text-[#9B8BBF] hover:text-[#6B5B95] transition-colors group"
+                                >
+                                    <span>Ino - YouTube</span>
+                                    <Icon name="ExternalLink" size={12} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                                </a>
+                                <div className="h-px w-6 bg-[#ECE7F5]"></div>
+                            </div>
+
+                            {/* Google Sheet 連結 */}
+                            <div className="flex items-center space-x-3">
+                                <div className="h-px w-6 bg-[#ECE7F5]"></div>
+                                <a 
+                                    href={SHEET_VIEW_URL}
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="flex items-center space-x-1.5 text-[11px] tracking-[0.2em] font-medium uppercase text-[#9B8BBF] hover:text-[#6B5B95] transition-colors group"
+                                >
+                                    <span>INO完整歌單及歌回VOD</span>
+                                    <Icon name="Table" size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                                </a>
+                                <div className="h-px w-6 bg-[#ECE7F5]"></div>
+                            </div>
                         </div>
                     </header>
 
@@ -409,7 +419,6 @@
                                 </p>
                             </div>
                             <div className="flex items-center space-x-6">
-                                <span className="text-[10px] text-[#C8BFE0] tracking-[0.3em] uppercase">Cloud Sync v3.4</span>
                                 <div className="flex space-x-1.5">
                                     <div className="w-1 h-1 bg-[#ECE7F5] rounded-full"></div>
                                     <div className="w-1 h-1 bg-[#C8BFE0] rounded-full"></div>
