@@ -1,0 +1,342 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { Search, Music, Library, ChevronUp, ChevronDown, ListMusic, Filter, Info, ExternalLink, Image as ImageIcon, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+
+const App = () => {
+  // --- Google Sheet CSV 連結 ---
+  const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT30owrni1cunvHWpCIaI4E9mHjZhaGAi4goh1mo13vx0E5dgV7uPWDDYCwRBASNmItf2W25-sPMMYX/pub?output=csv"; 
+
+  const [songs, setSongs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedGenre, setSelectedGenre] = useState('全部');
+  const [sortConfig, setSortConfig] = useState({ key: 'title', direction: 'asc' });
+  
+  // 分頁狀態
+  const [currentPage, setCurrentPage] = useState(1);
+  const songsPerPage = 20;
+
+  // 當搜尋或篩選條件改變時，回到第一頁
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedGenre]);
+
+  // 強大的 CSV 解析器，處理標題內的換行符號與引號
+  const parseCSV = (text) => {
+    const rows = [];
+    let currentRow = [];
+    let currentField = '';
+    let insideQuotes = false;
+    
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const nextChar = text[i + 1];
+      
+      if (char === '"' && insideQuotes && nextChar === '"') {
+        currentField += '"'; i++; // 處理連續兩個引號
+      } else if (char === '"') {
+        insideQuotes = !insideQuotes;
+      } else if (char === ',' && !insideQuotes) {
+        currentRow.push(currentField);
+        currentField = '';
+      } else if ((char === '\n' || char === '\r') && !insideQuotes) {
+        if (currentRow.length > 0 || currentField !== '') {
+          currentRow.push(currentField);
+          rows.push(currentRow);
+          currentRow = [];
+          currentField = '';
+        }
+        if (char === '\r' && nextChar === '\n') i++; // 跳過 \r\n 的 \n
+      } else {
+        currentField += char;
+      }
+    }
+    if (currentRow.length > 0 || currentField !== '') {
+      currentRow.push(currentField);
+      rows.push(currentRow);
+    }
+    return rows;
+  };
+
+  useEffect(() => {
+    if (!SHEET_URL) {
+      setLoading(false);
+      setError("請在程式碼中填入 Google Sheet CSV 連結");
+      return;
+    }
+
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(SHEET_URL);
+        const csvText = await response.text();
+        
+        const allRows = parseCSV(csvText);
+        if (allRows.length < 2) throw new Error("資料格式不正確");
+
+        const rawHeaders = allRows[0];
+        const dataRows = allRows.slice(1);
+
+        const parsedData = dataRows.map((row, index) => {
+          const item = {};
+          rawHeaders.forEach((header, i) => {
+            const val = row[i] ? row[i].trim() : "-";
+            const h = header.replace(/\n/g, ' ').trim(); // 移除換行符號方便匹配
+            
+            if (h.includes("曲名")) item.title = val;
+            else if (h.includes("歌手") || h.includes("アーチスト")) item.artist = val;
+            else if (h.includes("類型") || h.includes("ジャンル")) item.genre = val;
+            else if (h.includes("作品種類") || h.includes("種類")) item.type = val;
+            else if (h.includes("作品系列") || h.includes("系列")) item.series = val;
+          });
+          item.id = index;
+          return item;
+        }).filter(item => item.title && item.title !== "-"); // 確保不抓到空行
+
+        setSongs(parsedData);
+        setLoading(false);
+      } catch (err) {
+        console.error("Fetch error:", err);
+        setError("讀取失敗。請確認試算表已「發佈到網路」且標題欄位包含 曲名、歌手、類型、種類、作品系列。");
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [SHEET_URL]);
+
+  const genres = useMemo(() => {
+    const list = songs.map(s => s.genre).filter(g => g && g !== "-");
+    return ['全部', ...new Set(list)];
+  }, [songs]);
+
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    setSortConfig({ key, direction });
+  };
+
+  // 1. 先進行篩選與排序
+  const processedSongs = useMemo(() => {
+    let result = songs.filter(song => {
+      const searchStr = `${song.title} ${song.artist} ${song.series} ${song.type}`.toLowerCase();
+      const matchesSearch = searchStr.includes(searchTerm.toLowerCase());
+      const matchesGenre = selectedGenre === '全部' || song.genre === selectedGenre;
+      return matchesSearch && matchesGenre;
+    });
+
+    result.sort((a, b) => {
+      const valA = a[sortConfig.key] || "";
+      const valB = b[sortConfig.key] || "";
+      if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [songs, searchTerm, selectedGenre, sortConfig]);
+
+  // 2. 計算分頁
+  const totalPages = Math.ceil(processedSongs.length / songsPerPage);
+  const currentSongs = useMemo(() => {
+    const startIndex = (currentPage - 1) * songsPerPage;
+    return processedSongs.slice(startIndex, startIndex + songsPerPage);
+  }, [processedSongs, currentPage, songsPerPage]);
+
+  return (
+    <div className="min-h-screen bg-[#F9F8FF] text-[#7C6BA1] font-sans p-4 md:p-12">
+      {/* Header Area */}
+      <header className="max-w-7xl mx-auto mb-12 flex flex-col items-center">
+        <div className="w-24 h-24 mb-6 rounded-[2.5rem] border-2 border-dashed border-[#E0D9F0] flex items-center justify-center bg-white group hover:border-[#B7AAD6] transition-all cursor-pointer overflow-hidden shadow-sm">
+          <div className="flex flex-col items-center">
+            <ImageIcon className="text-[#C8BFE0] group-hover:text-[#9B8BBF] mb-1 transition-colors" size={32} />
+            <span className="text-[10px] text-[#C8BFE0] font-medium tracking-widest uppercase">Logo</span>
+          </div>
+        </div>
+
+        <h1 className="text-2xl font-light tracking-[0.3em] text-[#6B5B95] mb-2 text-center uppercase">
+          伊諾 Ino Song List
+        </h1>
+        
+        <div className="flex items-center space-x-3 text-[#A99ACD]">
+          <div className="h-px w-8 bg-[#ECE7F5]"></div>
+          <a 
+            href="https://www.youtube.com/@Inochannel" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="flex items-center space-x-1.5 text-[10px] tracking-[0.2em] font-medium uppercase text-[#9B8BBF] hover:text-[#6B5B95] transition-colors group"
+          >
+            <span>伊諾 Ino - YouTube</span>
+            <ExternalLink size={10} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+          </a>
+          <div className="h-px w-8 bg-[#ECE7F5]"></div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto">
+        
+        <div className="flex flex-col md:flex-row gap-3 mb-10 items-stretch">
+          <div className="flex-grow relative group">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-[#C8BFE0] group-focus-within:text-[#9B8BBF] transition-colors" size={18} />
+            <input
+              type="text"
+              placeholder="搜尋曲名、歌手、系列或種類..."
+              className="w-full pl-14 pr-6 py-4 bg-white border border-[#EDE9F5] rounded-2xl focus:outline-none focus:ring-4 focus:ring-[#9B8BBF]/10 transition-all text-[#6B5B95] placeholder-[#D5CFE5] shadow-sm shadow-[#9B8BBF]/5"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              disabled={loading}
+            />
+          </div>
+          
+          <div className="relative md:w-56 group text-[#7C6BA1]">
+            <Filter className="absolute left-5 top-1/2 -translate-y-1/2 text-[#C8BFE0] group-focus-within:text-[#9B8BBF] pointer-events-none" size={16} />
+            <select
+              className="w-full pl-12 pr-10 py-4 bg-white border border-[#EDE9F5] rounded-2xl focus:outline-none focus:ring-4 focus:ring-[#9B8BBF]/10 transition-all text-[#7C6BA1] shadow-sm appearance-none cursor-pointer"
+              value={selectedGenre}
+              onChange={(e) => setSelectedGenre(e.target.value)}
+              disabled={loading}
+            >
+              {genres.map(genre => (
+                <option key={genre} value={genre}>
+                  {genre === '全部' ? '所有類型' : genre}
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[#C8BFE0] pointer-events-none">
+              <ChevronDown size={18} />
+            </div>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-32 space-y-4">
+            <Loader2 className="animate-spin text-[#9B8BBF]" size={40} />
+            <p className="text-sm tracking-widest text-[#9B8BBF] animate-pulse">正在讀取雲端資料...</p>
+          </div>
+        ) : error ? (
+          <div className="bg-white border border-[#F1ECF7] p-12 rounded-[2.5rem] text-center shadow-sm">
+             <Info className="mx-auto mb-4 text-[#D5CFE5]" size={40} />
+             <p className="text-[#9B8BBF] font-light">{error}</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="bg-white rounded-[2.5rem] shadow-sm border border-[#F1ECF7] overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left min-w-[850px]">
+                  <thead>
+                    <tr className="bg-[#FBF9FF] text-[#9B8BBF] text-[11px] uppercase tracking-widest border-b border-[#F1ECF7]">
+                      <th className="pl-10 pr-6 py-6 font-semibold cursor-pointer hover:text-[#6B5B95]" onClick={() => handleSort('title')}>
+                        <div className="flex items-center space-x-2">
+                          <span>曲名</span>
+                          {sortConfig.key === 'title' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+                        </div>
+                      </th>
+                      <th className="px-6 py-6 font-semibold cursor-pointer hover:text-[#6B5B95]" onClick={() => handleSort('artist')}>
+                        <div className="flex items-center space-x-2">
+                          <span>歌手</span>
+                          {sortConfig.key === 'artist' && (sortConfig.direction === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+                        </div>
+                      </th>
+                      <th className="px-6 py-6 font-semibold text-center whitespace-nowrap">類型</th>
+                      <th className="px-6 py-6 font-semibold text-center whitespace-nowrap">種類</th>
+                      <th className="pr-10 pl-6 py-6 font-semibold">作品系列</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#F1ECF7]/70">
+                    {currentSongs.length > 0 ? (
+                      currentSongs.map((song) => (
+                        <tr key={song.id} className="hover:bg-[#F9F8FF] transition-colors group">
+                          <td className="pl-10 pr-6 py-6 font-medium text-[#6B5B95] tracking-tight group-hover:text-[#56497D]">
+                            {song.title}
+                          </td>
+                          <td className="px-6 py-6 text-sm text-[#9B8BBF] font-light">
+                            {song.artist}
+                          </td>
+                          <td className="px-6 py-6 text-center whitespace-nowrap">
+                            <span className="inline-block px-3 py-1 bg-[#F5F1FA] text-[#8C7CAF] text-[10px] rounded-lg border border-[#E9E1F2] whitespace-nowrap">
+                              {song.genre}
+                            </span>
+                          </td>
+                          <td className="px-6 py-6 text-center text-[11px] font-medium tracking-wider text-[#9B8BBF] whitespace-nowrap">
+                            {song.type === '-' ? <span className="text-[#E0D9F0]">N/A</span> : song.type}
+                          </td>
+                          <td className="pr-10 pl-6 py-6">
+                            <div className="flex items-center space-x-2">
+                              <div className={`w-1 h-1 rounded-full ${song.series === '-' ? 'bg-[#F1ECF7]' : 'bg-[#C8BFE0]'}`}></div>
+                              <span className={`text-xs ${song.series === '-' ? 'text-[#C8BFE0] italic' : 'text-[#8C7CAF] font-light'}`}>
+                                {song.series === '-' ? '無系列資訊' : song.series}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="5" className="px-8 py-32 text-center">
+                          <div className="flex flex-col items-center opacity-50">
+                            <ListMusic size={40} className="mb-4 text-[#C8BFE0]" />
+                            <p className="text-xs tracking-[0.2em] text-[#9B8BBF] uppercase font-light">查無相關歌曲</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* 分頁控制項 */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center space-x-4 py-4">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-xl bg-white border border-[#EDE9F5] text-[#C8BFE0] hover:text-[#9B8BBF] hover:border-[#B7AAD6] disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                
+                <div className="flex items-center px-4 py-2 bg-white rounded-xl border border-[#EDE9F5] shadow-sm">
+                  <span className="text-xs tracking-widest text-[#9B8BBF]">
+                    第 <span className="font-semibold text-[#6B5B95]">{currentPage}</span> / {totalPages} 頁
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-xl bg-white border border-[#EDE9F5] text-[#C8BFE0] hover:text-[#9B8BBF] hover:border-[#B7AAD6] disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm"
+                >
+                  <ChevronRight size={20} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        <footer className="mt-12 flex flex-col md:flex-row items-center justify-between gap-6 px-6 pb-16">
+          <div className="flex items-center space-x-3 group">
+            <div className="p-2 bg-white rounded-xl border border-[#EDE9F5] shadow-sm group-hover:bg-[#F9F8FF] transition-colors">
+              <Info size={14} className="text-[#C8BFE0]" />
+            </div>
+            <p className="text-xs text-[#9B8BBF] tracking-wide font-light">
+              目前共篩選出 <span className="text-[#6B5B95] font-semibold">{processedSongs.length}</span> 首曲目
+            </p>
+          </div>
+          <div className="flex items-center space-x-6">
+            <span className="text-[10px] text-[#C8BFE0] tracking-[0.3em] uppercase">Cloud Sync v3.3</span>
+            <div className="flex space-x-1.5">
+              <div className="w-1 h-1 bg-[#ECE7F5] rounded-full"></div>
+              <div className="w-1 h-1 bg-[#C8BFE0] rounded-full"></div>
+              <div className="w-1 h-1 bg-[#9B8BBF] rounded-full"></div>
+            </div>
+          </div>
+        </footer>
+      </main>
+    </div>
+  );
+};
+
+export default App;
